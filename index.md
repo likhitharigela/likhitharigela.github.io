@@ -80,6 +80,8 @@ Every timer is also visible in the Temporal UI, a web dashboard where you can se
 <!-- SCREENSHOT: Add a screenshot of the Temporal UI here showing PhaseTimerWorkflow and GameLifecycleWorkflow in the workflows list -->
 ![Temporal UI workflows list](images/temporal-workflows.png)
 
+*A clean game in progress, exactly 2 workflows running. One PhaseTimerWorkflow counting down the current phase and one GameLifecycleWorkflow keeping the room alive.*
+
 Before Temporal, a service restart meant timers were lost and the game would freeze. An HTTP call failure meant the phase never advanced, silently. After Temporal, service restarts resume timers automatically and failed calls are retried until they succeed.
 
 ### How it was used for the host problem
@@ -107,8 +109,17 @@ Because Temporal saves its state to a database, the room information survives Ga
 
 <!-- SCREENSHOT: Add a screenshot of a single workflow detail page showing the event history of a GameLifecycleWorkflow -->
 ![Temporal workflow detail](images/temporal-workflow-detail.png)
+
+*The PhaseTimerWorkflow handles the countdown for the current phase while GameLifecycleWorkflow tracks the entire game room from start to finish.*
+
+
 ![Temporal workflow detail](images/temporal-workflow-detail1.png)
+*Inside the GameLifecycleWorkflow, every game_started and phase_advanced signal is recorded on a timeline. Each signal triggers a start_phase_timer_activity which kicks off the next countdown.*
+
+
 ![Temporal workflow detail](images/temporal-workflow-detail2.png)
+
+*A completed PhaseTimerWorkflow — started at 05:32:46 and closed at 05:33:16, exactly 30 seconds later. This is one phase timer that ran, hit zero, and advanced the game to the next phase automatically.*
 
 
 ## Solution 2: Kubernetes
