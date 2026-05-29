@@ -8,10 +8,10 @@ Simple enough on the surface. But getting this to work reliably, without timers 
 
 The game runs across 5 separate services:
 
-**Frontend** handles what players see in the browser. 
-**Gateway** is the entry point that handles login and routes requests. 
+**Frontend** handles what players see in the browser.
+**Gateway** is the entry point that handles login and routes requests.
 **Game Engine** is the brain that handles game rules and phase logic.
-**Event Service** manages the countdown timers. 
+**Event Service** manages the countdown timers.
 **MongoDB** stores all game data.
 
 Each service is its own program running in its own container.
@@ -22,11 +22,22 @@ The countdown timer for each phase was a simple background task running inside t
 
 This worked fine until the Event Service restarted due to a crash or a deployment. The moment it restarted, every active timer was gone. No record they ever existed. Players would be stuck in a phase forever with no way out.
 
+This was the original timer code, a plain goroutine that lived only in memory:
+
+```go
+go func() {
+    ticker := time.NewTicker(time.Duration(durationSec) * time.Second)
+    defer ticker.Stop()
+    <-ticker.C
+    engineAdvancePhase(roomID) // lost forever if service restarts here
+}()
+```
+
 ### Problem 2: Who is the host?
 
 The Gateway kept track of which player created each room in a simple in-memory variable:
 
-```
+```python
 _ROOM_HOSTS = { "room123": "Likhith" }
 ```
 
@@ -44,27 +55,58 @@ Think of it like a video game save point, except it saves automatically at every
 
 ### How it was used for the phase timer
 
-Instead of a plain background task, the timer was written as a Temporal Workflow:
+Instead of the goroutine, the timer was rewritten as a Temporal Workflow:
 
-```
-Start PhaseTimerWorkflow
-  > Sleep for 30 seconds        (Temporal saves progress here)
-  > Call AdvancePhase           (Temporal retries this if it fails)
+```go
+func PhaseTimerWorkflow(ctx workflow.Context, input PhaseTimerInput) error {
+    // This sleep is durable. If the service crashes at second 18 of 30,
+    // Temporal resumes it with 12 seconds left when the service restarts.
+    if err := workflow.Sleep(ctx, time.Duration(input.DurationSec)*time.Second); err != nil {
+        // Cancelled means the host manually advanced. Clean exit.
+        return nil
+    }
+
+    // This HTTP call is retried automatically if it fails.
+    return workflow.ExecuteActivity(ctx, AdvancePhase, input).Get(ctx, nil)
+}
 ```
 
-The key difference is that `workflow.Sleep(30 seconds)` is not a normal sleep. It is a durable sleep. If the Event Service crashes at second 18, Temporal knows the timer had 12 seconds left. When the service restarts, it resumes the sleep with 12 seconds remaining. The players never notice anything happened.
+The key difference is that `workflow.Sleep` is not a normal sleep. It is a durable sleep. If the Event Service crashes at second 18, Temporal knows the timer had 12 seconds left. When the service restarts, it resumes the sleep with 12 seconds remaining. The players never notice anything happened.
 
 If the call to advance the phase fails because the Game Engine is briefly down, Temporal automatically retries it with no manual intervention needed.
 
 Every timer is also visible in the Temporal UI, a web dashboard where you can see every active timer, how long is left, and the full history of what happened.
 
+<!-- SCREENSHOT: Add a screenshot of the Temporal UI here showing PhaseTimerWorkflow and GameLifecycleWorkflow in the workflows list -->
+![Temporal UI workflows list](images/temporal-workflows.png)
+
 Before Temporal, a service restart meant timers were lost and the game would freeze. An HTTP call failure meant the phase never advanced, silently. After Temporal, service restarts resume timers automatically and failed calls are retried until they succeed.
 
 ### How it was used for the host problem
 
-The in-memory host variable was replaced with a Temporal Workflow, one per room. This workflow holds the room state including who the host is and what phase the game is in, and keeps it alive for the entire duration of the game.
+The in-memory host variable was replaced with a Temporal Workflow, one per room. This workflow holds the room state including who the host is and what phase the game is in, and keeps it alive for the entire duration of the game:
+
+```python
+@workflow.run
+async def run(self, room_id: str, room_code: str, host_username: str) -> str:
+    self._state = RoomState(
+        room_id=room_id,
+        room_code=room_code,
+        host_username=host_username
+    )
+    # Wait for the game to start
+    await workflow.wait_condition(lambda: self._game_started_signal is not None)
+
+    # Phase loop, runs until the game ends
+    while True:
+        await workflow.wait_condition(lambda: self._pending_phase is not None)
+        await workflow.execute_activity(start_phase_timer_activity, ...)
+```
 
 Because Temporal saves its state to a database, the room information survives Gateway restarts. Any service can ask Temporal "who is the host of room 123?" at any time and get a correct answer.
+
+<!-- SCREENSHOT: Add a screenshot of a single workflow detail page showing the event history of a GameLifecycleWorkflow -->
+![Temporal workflow detail](images/temporal-workflow-detail.png)
 
 ## Solution 2: Kubernetes
 
@@ -80,21 +122,43 @@ Kubernetes watches your containers 24/7. If one crashes, Kubernetes restarts it 
 
 The plan is to describe the entire application to Kubernetes as a set of configuration files. Each service will have a file that says what container image to run, what environment variables it needs, how to check if it is healthy, and how many copies to run.
 
-For example, the Gateway configuration will tell Kubernetes to run 1 copy of the Gateway container, pass in the JWT secret from a secure store, and check the health endpoint every 5 seconds. If it stops responding, Kubernetes will restart it automatically.
+For example, this is what the Gateway configuration looks like:
+
+```yaml
+containers:
+  - name: mafia-gateway-service
+    image: mafia-gateway:latest
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 8000
+      periodSeconds: 5   # check every 5 seconds, restart if it fails
+```
 
 Kubernetes will also handle startup ordering. Temporal needs its database to be ready before it starts. The Event Service needs Temporal to be ready before it starts. Each service will be configured to wait for its dependencies before starting:
 
-```
-Event Service startup:
-  Step 1: Wait until Temporal is reachable on port 7233
-  Step 2: Start the actual Event Service
+```yaml
+initContainers:
+  - name: wait-for-temporal
+    image: busybox
+    command: ['sh', '-c', 'until nc -z temporal 7233; do sleep 3; done']
 ```
 
-This means even if everything starts at the same time, each service waits for what it needs.
+This small piece of config makes the Event Service sit and wait until Temporal is reachable on port 7233 before it starts. No more services crashing because they started too early.
 
 ### Secrets management
 
-Currently, sensitive config like database passwords and JWT secrets live in a plain text file on the machine. With Kubernetes, these will move into a built-in Secrets store. Containers will read from Secrets at runtime, so credentials will never be hardcoded or stored in source code.
+Currently, sensitive config like database passwords and JWT secrets live in a plain text file on the machine. With Kubernetes, these will move into a built-in Secrets store:
+
+```yaml
+- name: JWT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: mafia-secrets
+      key: JWT_SECRET
+```
+
+Containers read from Secrets at runtime, so credentials will never be hardcoded or stored in source code.
 
 The goal is that once Kubernetes is fully in place, a container crash will be handled automatically, config will be stored securely, and health checks will run on every service with automatic recovery. No more manually restarting things when something goes down.
 
@@ -122,7 +186,12 @@ Applying all the configuration files brings up the entire application:
 kubectl apply -f ./k8s/manifests/
 ```
 
-All 7 services including Temporal and its database spin up on the laptop. The Temporal UI is available at a local URL where every game's timer workflow can be watched in real time. The remaining work is around making the frontend and backend communicate cleanly inside the cluster.
+All 7 services including Temporal and its database spin up on the laptop. The Temporal UI is available at a local URL where every game's timer workflow can be watched in real time.
+
+<!-- SCREENSHOT: Add a screenshot of kubectl get pods -n mafia showing all services running -->
+![Kubernetes pods running](images/kubectl-pods.png)
+
+The remaining work is around making the frontend and backend communicate cleanly inside the cluster.
 
 ## What This Taught
 
