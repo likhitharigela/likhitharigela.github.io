@@ -107,6 +107,9 @@ Because Temporal saves its state to a database, the room information survives Ga
 
 <!-- SCREENSHOT: Add a screenshot of a single workflow detail page showing the event history of a GameLifecycleWorkflow -->
 ![Temporal workflow detail](images/temporal-workflow-detail.png)
+![Temporal workflow detail](images/temporal-workflow-detail1.png)
+![Temporal workflow detail](images/temporal-workflow-detail2.png)
+
 
 ## Solution 2: Kubernetes
 
