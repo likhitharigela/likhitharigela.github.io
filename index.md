@@ -186,13 +186,6 @@ Applying all the configuration files brings up the entire application:
 kubectl apply -f ./k8s/manifests/
 ```
 
-All 7 services including Temporal and its database spin up on the laptop. The Temporal UI is available at a local URL where every game's timer workflow can be watched in real time.
-
-<!-- SCREENSHOT: Add a screenshot of kubectl get pods -n mafia showing all services running -->
-![Kubernetes pods running](images/kubectl-pods.png)
-
-The remaining work is around making the frontend and backend communicate cleanly inside the cluster.
-
 ## What This Taught
 
 Temporal changed how background tasks are written. Before, a timer was written and left to chance. Now every long-running task is a workflow with checkpoints, something that can be paused, resumed, and retried without losing progress.
