@@ -1,14 +1,18 @@
-# How Temporal and Kubernetes Were Used in This Project
+# Orchestrating Gameplay: How Temporal and Kubernetes Power MAFIA
 
 A multiplayer Mafia game was built to explore distributed systems in a real, working application. The game has multiple phases: Night, Voting, Discussion, each with a countdown timer. Players take actions, the timer runs out, and the game moves to the next phase automatically.
 
-Simple enough on the surface. But getting this to work reliably, without timers dying, without the game freezing, without data disappearing when a service restarts, that's where Temporal and Kubernetes came in.
+Simple enough on the surface. But getting this to work reliably, without timers dying, without the game freezing, without data disappearing when a service restarts, that's where Temporal and Kubernetes come in.
 
 ## The Problem
 
 The game runs across 5 separate services:
 
-**Frontend** handles what players see in the browser. **Gateway** is the entry point that handles login and routes requests. **Game Engine** is the brain that handles game rules and phase logic. **Event Service** manages the countdown timers. **MongoDB** stores all game data.
+**Frontend** handles what players see in the browser. 
+**Gateway** is the entry point that handles login and routes requests. 
+**Game Engine** is the brain that handles game rules and phase logic.
+**Event Service** manages the countdown timers. 
+**MongoDB** stores all game data.
 
 Each service is its own program running in its own container.
 
@@ -34,7 +38,7 @@ If the Gateway restarted, that variable reset to empty. Suddenly no one was the 
 
 Temporal is a tool that lets you write code that survives crashes.
 
-Normally, if your program crashes mid-execution, whatever it was doing is lost. Temporal solves this by saving the progress of your code as it runs. If the program crashes, Temporal replays the code from where it left off when it restarts.
+Normally, if your program crashes mid execution, whatever it was doing is lost. Temporal solves this by saving the progress of your code as it runs. If the program crashes, Temporal replays the code from where it left off when it restarts.
 
 Think of it like a video game save point, except it saves automatically at every step.
 
@@ -72,13 +76,13 @@ With Docker Compose, you start all your containers with one command. But if a co
 
 Kubernetes watches your containers 24/7. If one crashes, Kubernetes restarts it automatically. If you tell Kubernetes "I want 3 copies of the Gateway running", it will always maintain exactly 3, replacing any that die.
 
-### How it was used
+### How it will be used
 
-The entire application was described to Kubernetes as a set of configuration files. Each service has a file that says what container image to run, what environment variables it needs, how to check if it is healthy, and how many copies to run.
+The plan is to describe the entire application to Kubernetes as a set of configuration files. Each service will have a file that says what container image to run, what environment variables it needs, how to check if it is healthy, and how many copies to run.
 
-For example, the Gateway configuration tells Kubernetes to run 1 copy of the Gateway container, pass in the JWT secret from a secure store, and check the health endpoint every 5 seconds. If it stops responding, restart it.
+For example, the Gateway configuration will tell Kubernetes to run 1 copy of the Gateway container, pass in the JWT secret from a secure store, and check the health endpoint every 5 seconds. If it stops responding, Kubernetes will restart it automatically.
 
-Kubernetes also handles startup ordering. Temporal needs its database to be ready before it starts. The Event Service needs Temporal to be ready before it starts. Each service was configured to wait for its dependencies before starting:
+Kubernetes will also handle startup ordering. Temporal needs its database to be ready before it starts. The Event Service needs Temporal to be ready before it starts. Each service will be configured to wait for its dependencies before starting:
 
 ```
 Event Service startup:
@@ -90,40 +94,40 @@ This means even if everything starts at the same time, each service waits for wh
 
 ### Secrets management
 
-Before Kubernetes, sensitive config like database passwords and JWT secrets lived in a plain text file on the machine. Kubernetes has a built-in Secrets store for sensitive values. Containers read from Secrets at runtime, so credentials are never hardcoded or stored in source code.
+Currently, sensitive config like database passwords and JWT secrets live in a plain text file on the machine. With Kubernetes, these will move into a built-in Secrets store. Containers will read from Secrets at runtime, so credentials will never be hardcoded or stored in source code.
 
-Before Kubernetes, a container crash required a manual restart, sensitive config lived in plain files, and there was no way to check if services were healthy. After Kubernetes, crashes are handled automatically, config is stored securely, and health checks run on every service with automatic recovery.
+The goal is that once Kubernetes is fully in place, a container crash will be handled automatically, config will be stored securely, and health checks will run on every service with automatic recovery. No more manually restarting things when something goes down.
 
-## How They Work Together
+## How They Will Work Together
 
 Temporal and Kubernetes solve different problems.
 
-Temporal manages the application logic, specifically the workflows and timers, and ensures they survive crashes and failed calls. Kubernetes manages the containers and ensures they are always running, healthy, and properly configured.
+Temporal manages the application logic, specifically the workflows and timers, and ensures they survive crashes and failed calls. Kubernetes will manage the containers and ensure they are always running, healthy, and properly configured.
 
-In the project, Kubernetes makes sure all 7 services are always running. Temporal makes sure the game logic, timers and room state, is always correct.
+Once both are fully integrated, Kubernetes will make sure all 7 services are always running. Temporal will make sure the game logic, timers and room state, is always correct.
 
 Neither one replaces the other. Kubernetes keeps the containers alive. Temporal keeps the application logic alive.
 
 ## Running It Locally
 
-To run the full stack on a laptop, Minikube was used. Minikube creates a Kubernetes cluster inside Docker on your local machine. One command starts the cluster:
+The setup already works locally using Minikube, a tool that creates a Kubernetes cluster inside Docker on a laptop. The cluster starts with one command:
 
 ```
 minikube start --driver=docker --memory=6144 --cpus=4
 ```
 
-Then applying all the configuration files brings up the entire application:
+Applying all the configuration files brings up the entire application:
 
 ```
 kubectl apply -f ./k8s/manifests/
 ```
 
-All 7 services including Temporal and its database spin up on the laptop. The Temporal UI is available at a local URL where every game's timer workflow can be watched in real time.
+All 7 services including Temporal and its database spin up on the laptop. The Temporal UI is available at a local URL where every game's timer workflow can be watched in real time. The remaining work is around making the frontend and backend communicate cleanly inside the cluster.
 
-## What Changed
+## What This Taught
 
 Temporal changed how background tasks are written. Before, a timer was written and left to chance. Now every long-running task is a workflow with checkpoints, something that can be paused, resumed, and retried without losing progress.
 
-Kubernetes changed how deployment works. Before, deploying meant running docker-compose up and hoping nothing crashed. Now the infrastructure takes care of itself with health checks, restarts, and ordered startup.
+Kubernetes is changing how deployment works. The goal is to reach a point where the infrastructure takes care of itself with health checks, restarts, and ordered startup, and the focus can stay entirely on the application.
 
-Both tools have a learning curve. But once they click, it is hard to imagine going back.
+Both tools have a learning curve. But the problems they solve are real, and once you see them working, it is hard to go back to doing things manually.
