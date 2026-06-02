@@ -29,7 +29,7 @@ go func() {
     ticker := time.NewTicker(time.Duration(durationSec) * time.Second)
     defer ticker.Stop()
     <-ticker.C
-    engineAdvancePhase(roomID) // lost forever if service restarts here
+    engineAdvancePhase(roomID)
 }()
 ```
 
@@ -59,14 +59,10 @@ Instead of the goroutine, the timer was rewritten as a Temporal Workflow:
 
 ```go
 func PhaseTimerWorkflow(ctx workflow.Context, input PhaseTimerInput) error {
-    // This sleep is durable. If the service crashes at second 18 of 30,
-    // Temporal resumes it with 12 seconds left when the service restarts.
     if err := workflow.Sleep(ctx, time.Duration(input.DurationSec)*time.Second); err != nil {
         // Cancelled means the host manually advanced. Clean exit.
         return nil
     }
-
-    // This HTTP call is retried automatically if it fails.
     return workflow.ExecuteActivity(ctx, AdvancePhase, input).Get(ctx, nil)
 }
 ```
@@ -96,10 +92,8 @@ async def run(self, room_id: str, room_code: str, host_username: str) -> str:
         room_code=room_code,
         host_username=host_username
     )
-    # Wait for the game to start
-    await workflow.wait_condition(lambda: self._game_started_signal is not None)
 
-    # Phase loop, runs until the game ends
+    await workflow.wait_condition(lambda: self._game_started_signal is not None)
     while True:
         await workflow.wait_condition(lambda: self._pending_phase is not None)
         await workflow.execute_activity(start_phase_timer_activity, ...)
@@ -146,7 +140,7 @@ containers:
       httpGet:
         path: /health
         port: 8000
-      periodSeconds: 5   # check every 5 seconds, restart if it fails
+      periodSeconds: 5 
 ```
 
 Kubernetes will also handle startup ordering. Temporal needs its database to be ready before it starts. The Event Service needs Temporal to be ready before it starts. Each service will be configured to wait for its dependencies before starting:
