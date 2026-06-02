@@ -60,7 +60,6 @@ Instead of the goroutine, the timer was rewritten as a Temporal Workflow:
 ```go
 func PhaseTimerWorkflow(ctx workflow.Context, input PhaseTimerInput) error {
     if err := workflow.Sleep(ctx, time.Duration(input.DurationSec)*time.Second); err != nil {
-        // Cancelled means the host manually advanced. Clean exit.
         return nil
     }
     return workflow.ExecuteActivity(ctx, AdvancePhase, input).Get(ctx, nil)
