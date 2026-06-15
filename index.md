@@ -112,7 +112,7 @@ Because Temporal saves its state to a database, the room information survives Ga
 
 ![Temporal workflow detail](images/temporal-workflow-detail2.png)
 
-*A completed PhaseTimerWorkflow — started at 05:32:46 and closed at 05:33:16, exactly 30 seconds later. This is one phase timer that ran, hit zero, and advanced the game to the next phase automatically.*
+*A completed PhaseTimerWorkflow, started at 05:32:46 and closed at 05:33:16, exactly 30 seconds later. This is one phase timer that ran, hit zero, and advanced the game to the next phase automatically.*
 
 
 ## Solution 2: Kubernetes
@@ -121,11 +121,11 @@ Because Temporal saves its state to a database, the room information survives Ga
  
 Before understanding what Kubernetes does, it helps to understand the problem it solves.
  
-When you run a multiplayer game across 5 services — Frontend, Gateway, Game Engine, Event Service, and MongoDB — each running in its own container, you quickly run into a coordination problem. Who starts first? What happens when one crashes? How do you make sure the Event Service doesn't start before Temporal is ready?
+When you run a multiplayer game across 5 services, Frontend, Gateway, Game Engine, Event Service, and MongoDB, each running in its own container, you quickly run into a coordination problem. Who starts first? What happens when one crashes? How do you make sure the Event Service doesn't start before Temporal is ready?
  
 Docker Compose answers some of these questions locally, but it has no awareness of health, no automatic recovery, and no concept of scaling. Kubernetes solves all of this.
  
-**Kubernetes is a container orchestration platform.** It manages the deployment, scaling, networking, and lifecycle of containers across one or more machines. Instead of manually starting containers and watching them, you describe what you want — how many replicas, what environment variables, when it is healthy — and Kubernetes continuously works to make reality match that description.
+**Kubernetes is a container orchestration platform.** It manages the deployment, scaling, networking, and lifecycle of containers across one or more machines. Instead of manually starting containers and watching them, you describe what you want, how many replicas, what environment variables, when it is healthy, and Kubernetes continuously works to make reality match that description.
  
 ### Kubernetes Architecture
  
@@ -133,7 +133,7 @@ A Kubernetes cluster is made up of two kinds of nodes.
  
 The **Master Node** is the brain. It exposes the API that you talk to with `kubectl`, runs the scheduler that decides where to place containers, and continuously watches the cluster to correct any drift between desired and actual state. It stores all cluster data in `etcd`, a key-value store.
  
-The **Worker Nodes** are where your actual containers run. Each worker node runs a `kubelet` — an agent that takes instructions from the master and ensures the right containers are running — and a `kube-proxy` that handles network routing between pods.
+The **Worker Nodes** are where your actual containers run. Each worker node runs a `kubelet`, an agent that takes instructions from the master and ensures the right containers are running, and a `kube-proxy` that handles network routing between pods.
  
 ```
                     ┌─────────────────────────────┐
@@ -160,7 +160,7 @@ The **Worker Nodes** are where your actual containers run. Each worker node runs
  
 The key building blocks inside a cluster are:
  
-**Pod** — the smallest deployable unit. A pod is one or more containers that share a network and storage. Pods are not meant to live forever — they are created, destroyed, and recreated on demand. Your Gateway service runs as a pod. So does your MongoDB instance.
+**Pod** — the smallest deployable unit. A pod is one or more containers that share a network and storage. Pods are not meant to live forever, they are created, destroyed, and recreated on demand. Your Gateway service runs as a pod. So does your MongoDB instance.
  
 **Service** — because pods are ephemeral and their IP addresses change constantly, a Service sits in front of a group of pods and gives them a stable DNS name and virtual IP. Your Gateway pod can crash and be replaced with a new IP, and the Frontend service still finds it through the same Service name.
  
@@ -181,7 +181,7 @@ The Event Service sits and waits until it can reach Temporal on port 7233 before
  
 ### How Kubernetes is used in this project
  
-Every service is described as a Kubernetes manifest — a YAML file that says what image to run, what environment to inject, how to check health, and how many replicas to maintain.
+Every service is described as a Kubernetes manifest, a YAML file that says what image to run, what environment to inject, how to check health, and how many replicas to maintain.
  
 ```yaml
 containers:
@@ -196,7 +196,7 @@ containers:
  
 The `readinessProbe` means Kubernetes checks `/health` every 5 seconds. If it fails, the pod is taken out of rotation. No manual monitoring needed.
  
-Secrets are managed by Kubernetes and injected at runtime — nothing sensitive lives in source code:
+Secrets are managed by Kubernetes and injected at runtime, nothing sensitive lives in source code:
  
 ```yaml
 - name: JWT_SECRET
@@ -222,15 +222,15 @@ Kubernetes has built-in autoscaling called **HPA (Horizontal Pod Autoscaler)**. 
  
 This sounds great until you look at what Temporal workers actually do.
  
-A Temporal worker processing a game phase timer spends most of its time **sleeping** — `workflow.Sleep(30s)` is running on the Temporal server, not the worker. The worker is idle. CPU usage is near zero. HPA sees no load and never scales up, even if 50 games are queued.
+A Temporal worker processing a game phase timer spends most of its time **sleeping**, `workflow.Sleep(30s)` is running on the Temporal server, not the worker. The worker is idle. CPU usage is near zero. HPA sees no load and never scales up, even if 50 games are queued.
  
 This is the fundamental mismatch: **HPA scales on resource consumption, but Temporal workers are I/O-bound and event-driven, not CPU-bound.**
  
-The right signal to scale on is the **Temporal task queue depth** — how many activities are waiting to be picked up. HPA cannot read this. KEDA can.
+The right signal to scale on is the **Temporal task queue depth**, how many activities are waiting to be picked up. HPA cannot read this. KEDA can.
  
 ### What is KEDA?
  
-**KEDA (Kubernetes Event-Driven Autoscaler)** is a Kubernetes operator that scales deployments based on external event sources — not CPU or memory. It supports over 60 scalers including databases, message queues, cloud services, and Temporal.
+**KEDA (Kubernetes Event-Driven Autoscaler)** is a Kubernetes operator that scales deployments based on external event sources, not CPU or memory. It supports over 60 scalers including databases, message queues, cloud services, and Temporal.
  
 KEDA runs as a controller in your cluster. You define a `ScaledObject` that tells KEDA:
 - Which deployment to scale
@@ -244,10 +244,10 @@ KEDA then continuously polls that metric and adjusts the deployment's replica co
 | Approach | Problem |
 |---|---|
 | HPA on CPU | Workers are idle even with 30 games running. Never scales. |
-| HPA on memory | Same issue — memory is flat regardless of queue depth. |
+| HPA on memory | Same issue, memory is flat regardless of queue depth. |
 | Manual scaling | Defeats the purpose. Someone has to watch and react. |
 | Cron-based scaling | Can only scale on time, not actual load. |
-| **KEDA on Temporal queue depth** | **Scales on the actual signal that matters — pending tasks.** |
+| **KEDA on Temporal queue depth** | **Scales on the actual signal that matters: pending tasks.** |
  
 No other autoscaler in the Kubernetes ecosystem can read a Temporal task queue. KEDA is the only tool that makes this possible without writing custom controllers.
  
@@ -389,7 +389,7 @@ kubectl get scaledobjects -n mafia
 ```
  
 `READY: True` means KEDA successfully connected to Temporal and is watching the queue.
-`ACTIVE: False` means no pending tasks — no games running, workers are at minimum replica count.
+`ACTIVE: False` means no pending tasks, no games running, workers are at minimum replica count.
  
 ### What KEDA actually does
  
@@ -430,13 +430,13 @@ A natural question is: why not scale to zero when no games are running?
  
 The answer is a fundamental property of how Temporal workers interact with KEDA's scaler.
  
-Temporal workflows spend most of their time in `workflow.Sleep()` or `wait_condition()`. During these periods, there are **zero pending tasks in the queue** — the workflow is sleeping on the Temporal server, not consuming worker capacity.
+Temporal workflows spend most of their time in `workflow.Sleep()` or `wait_condition()`. During these periods, there are **zero pending tasks in the queue**, the workflow is sleeping on the Temporal server, not consuming worker capacity.
  
 KEDA's Temporal scaler watches **pending activity tasks**. When a workflow is sleeping, there are none. KEDA correctly reports `isActive: false` and would scale to zero.
  
-The problem: when the sleep ends and an activity needs to run, there is a window of ~10-30 seconds where no worker exists to pick it up. The activity sits in the queue, a player's game phase timer expires with no one to advance it, and the game appears frozen.
+The problem: when the sleep ends and an activity needs to run, there is a window of 10 to 30 seconds where no worker exists to pick it up. The activity sits in the queue, a player's game phase timer expires with no one to advance it, and the game appears frozen.
  
-`minReplicaCount: 1` ensures there is always one warm worker ready to pick up the next activity the moment it appears, with zero cold-start latency. KEDA's value is the **scale-up** — when a tournament runs 10 concurrent games and activities are genuinely queued, KEDA automatically brings up additional workers without any manual intervention.
+`minReplicaCount: 1` ensures there is always one warm worker ready to pick up the next activity the moment it appears, with zero cold-start latency. KEDA's value is the **scale-up**: when a tournament runs 10 concurrent games and activities are genuinely queued, KEDA automatically brings up additional workers without any manual intervention.
  
 This is something HPA cannot do. HPA looks at CPU. A Temporal worker processing a 30-second timer is doing nothing between the start and end of that timer. HPA would never scale it up. KEDA understands the application-level signal.
  
@@ -463,7 +463,7 @@ spec:
               command: ["python", "/workspace/clean_job.py"]
 ```
  
-The cleanup script connects to Temporal, lists all `GameLifecycleWorkflow` runs that have been in `WAITING` state for more than 2 hours, and sends an `abandon_room` signal to each. This triggers the workflow's cleanup activity — cancelling the phase timer, marking the room inactive — and the workflow completes cleanly.
+The cleanup script connects to Temporal, lists all `GameLifecycleWorkflow` runs that have been in `WAITING` state for more than 2 hours, and sends an `abandon_room` signal to each. This triggers the workflow's cleanup activity, cancelling the phase timer, marking the room inactive, and the workflow completes cleanly.
  
 ```bash
 # Manually trigger to verify
@@ -475,7 +475,7 @@ kubectl logs -n mafia -l job-name=manual-test -f
 # Cleanup complete. checked=3 abandoned=2 cutoff=2026-06-14T10:16:55+00:00
 ```
  
-This job cannot be replaced by a workflow timer — a workflow cannot signal itself to abandon. It needs an external actor. The CronJob is that actor.
+This job cannot be replaced by a workflow timer, a workflow cannot signal itself to abandon. It needs an external actor. The CronJob is that actor.
  
 ### Verifying the complete setup
  
@@ -496,12 +496,10 @@ kubectl get pods -n mafia -w
  
 ### What this taught
  
-Kubernetes removes the operational burden of keeping services alive — health checks, restarts, ordered startup, secret management, and rolling deploys all become declarative config rather than manual work.
+Kubernetes removes the operational burden of keeping services alive: health checks, restarts, ordered startup, secret management, and rolling deploys all become declarative config rather than manual work.
  
 KEDA reveals something important: the right autoscaling signal depends entirely on what your workload actually does. CPU and memory are proxies for load, and they are often wrong proxies. For Temporal workers, the task queue depth is the direct signal. Choosing the right scaler is an architectural decision, not an infrastructure one.
  
-The CronJob shows that not everything fits inside a workflow. Some tasks — specifically tasks that need to act on multiple workflows from the outside — belong in scheduled jobs at the infrastructure layer.
+The CronJob shows that not everything fits inside a workflow. Some tasks, specifically tasks that need to act on multiple workflows from the outside, belong in scheduled jobs at the infrastructure layer.
  
 Together, Kubernetes and KEDA turn the infrastructure from something you manage into something that manages itself.
-
-
