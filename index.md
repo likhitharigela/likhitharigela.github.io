@@ -135,28 +135,7 @@ The **Master Node** is the brain. It exposes the API that you talk to with `kube
  
 The **Worker Nodes** are where your actual containers run. Each worker node runs a `kubelet`, an agent that takes instructions from the master and ensures the right containers are running, and a `kube-proxy` that handles network routing between pods.
  
-```
-                    ┌─────────────────────────────┐
-                    │         Master Node          │
-                    │  ┌──────────┐  ┌──────────┐ │
-     kubectl ──────►│  │API Server│  │ Scheduler│ │
-                    │  └──────────┘  └──────────┘ │
-                    │  ┌───────────────────────┐   │
-                    │  │  Controller Manager   │   │
-                    │  └───────────────────────┘   │
-                    │  ┌──────┐                    │
-                    │  │ etcd │  (cluster state)   │
-                    │  └──────┘                    │
-                    └──────────┬──────────────────┘
-                               │
-               ┌───────────────┼───────────────┐
-               ▼               ▼               ▼
-        Worker Node      Worker Node      Worker Node
-        ┌─────────┐      ┌─────────┐      ┌─────────┐
-        │ kubelet │      │ kubelet │      │ kubelet │
-        │  pods   │      │  pods   │      │  pods   │
-        └─────────┘      └─────────┘      └─────────┘
-```
+![K8s Architecture ](images/k8s-arch.png)
  
 The key building blocks inside a cluster are:
  
