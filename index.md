@@ -489,11 +489,7 @@ kubectl get scaledobjects -n mafia
 # 3. Check CronJob is scheduled
 kubectl get cronjobs -n mafia
  
-# 4. Trigger cleanup manually
-kubectl create job --from=cronjob/stale-room-cleanup test-cleanup -n mafia
-kubectl logs -n mafia -l job-name=test-cleanup -f
- 
-# 5. Watch workers respond to game load
+# 4. Watch workers respond to game load
 kubectl get pods -n mafia -w
 # (start a game in another terminal and watch pods scale up)
 ```
