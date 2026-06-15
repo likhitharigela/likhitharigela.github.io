@@ -206,7 +206,7 @@ Secrets are managed by Kubernetes and injected at runtime — nothing sensitive 
       key: JWT_SECRET
 ```
  
-Once all manifests are applied, the entire 7-service game comes up with one command:
+Once all manifests are applied, the entire game comes up with one command:
  
 ```bash
 kubectl apply -f ./k8s/manifests/
