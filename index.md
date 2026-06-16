@@ -175,16 +175,6 @@ containers:
  
 The `readinessProbe` means Kubernetes checks `/health` every 5 seconds. If it fails, the pod is taken out of rotation. No manual monitoring needed.
  
-Secrets are managed by Kubernetes and injected at runtime, nothing sensitive lives in source code:
- 
-```yaml
-- name: JWT_SECRET
-  valueFrom:
-    secretKeyRef:
-      name: mafia-secrets
-      key: JWT_SECRET
-```
- 
 Once all manifests are applied, the entire game comes up with one command:
  
 ```bash
