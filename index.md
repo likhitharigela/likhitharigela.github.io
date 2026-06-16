@@ -433,17 +433,7 @@ spec:
 ```
  
 The cleanup script connects to Temporal, lists all `GameLifecycleWorkflow` runs that have been in `WAITING` state for more than 2 hours, and sends an `abandon_room` signal to each. This triggers the workflow's cleanup activity, cancelling the phase timer, marking the room inactive, and the workflow completes cleanly.
- 
-```bash
-# Manually trigger to verify
-kubectl create job --from=cronjob/stale-room-cleanup manual-test -n mafia
-kubectl logs -n mafia -l job-name=manual-test -f
- 
-# Output:
-# Connected to Temporal at temporal:7233
-# Cleanup complete. checked=3 abandoned=2 cutoff=2026-06-14T10:16:55+00:00
-```
- 
+
 This job cannot be replaced by a workflow timer, a workflow cannot signal itself to abandon. It needs an external actor. The CronJob is that actor.
  
 ### Verifying the complete setup
